@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "suite_version": "0.1.0",
+  "cases": [
+    {
+      "id": "embodied-transformer-history",
+      "split": "development",
+      "kind": "field-report",
+      "prompt": "研究一下具身智能的发展脉络，从 Transformer 开始。请给我一份可供评审的中文报告。",
+      "review_focus": [
+        "技术路线是否解释了转折的原因和代价，而非只列论文时间线",
+        "关键论文和因果判断能否追溯到原始来源",
+        "报告是否帮助读者形成可用的领域理解"
+      ]
+    },
+    {
+      "id": "pi0-latency",
+      "split": "development",
+      "kind": "source-check",
+      "prompt": "根据《π0: A Vision-Language-Action Flow Model for General Robot Control》原论文，解释模型一次机器人端推理的耗时构成，以及这些数字对实时控制意味着什么。请给我简短、可核查的中文说明。",
+      "primary_source": "https://arxiv.org/html/2410.24164",
+      "source_locator": "Appendix D, Table I",
+      "review_focus": [
+        "区分十次 flow 前向、图像编码和机器人端总耗时",
+        "数字和硬件条件是否与原论文一致",
+        "实时性的推断是否有适当边界"
+      ]
+    },
+    {
+      "id": "virtualhome-attribution",
+      "split": "development",
+      "kind": "source-check",
+      "prompt": "根据《Language Models as Zero-Shot Planners: Extracting Actionable Knowledge for Embodied Agents》原论文，解释 VirtualHome 上可执行性提升的结果和方法原因。请给我简短、可核查的中文说明。",
+      "primary_source": "https://arxiv.org/html/2201.07207",
+      "source_locator": "Sections 3.2–3.4; Tables 1–2",
+      "review_focus": [
+        "不把完整方法的提升全归功于动作翻译一个组件",
+        "区分可执行性与正确性",
+        "数字和消融结论是否与原论文一致"
+      ]
+    },
+    {
+      "id": "driving-end-to-end-history",
+      "split": "confirmation",
+      "kind": "field-report",
+      "prompt": "梳理自动驾驶方法从模块化感知、预测和规划，发展到端到端方法的技术脉络。请给我一份可供评审的中文报告，重点解释各阶段解决了什么问题、留下什么限制。",
+      "review_focus": [
+        "阶段划分是否服务于理解，而非只按年份罗列",
+        "代表性原始工作与效果边界是否可核查",
+        "是否说明模块化和端到端路线仍然并存的原因"
+      ]
+    }
+  ]
+}

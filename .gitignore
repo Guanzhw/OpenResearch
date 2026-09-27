@@ -22,3 +22,6 @@ Claude.local.md
 
 # This repo uses pnpm; ignore an accidental npm lockfile
 ui/package-lock.json
+
+# Local bytecode from the Python research evaluation helper.
+evals/research/__pycache__/
