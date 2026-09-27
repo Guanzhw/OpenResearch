@@ -1,31 +1,12 @@
 ---
 name: orx-lit-review
-description: "Learn a field, trace technical developments, or explain and compare scientific concepts using original research evidence. Use before answering conceptual questions, research claims, literature reviews, or related-work requests, even without a named paper. Retrieve with relevant alphaXiv, OpenAlex, bioRxiv, and PubMed connectors; scale retrieval to the question."
+description: "Explain and compare scientific or technical concepts using original research evidence. Use before answering conceptual or architectural questions, research claims, literature reviews, or related-work requests, even when no paper, citation, or search is requested. Retrieve with relevant alphaXiv, OpenAlex, bioRxiv, and PubMed connectors; scale retrieval to the question."
 ---
 
 # Literature retrieval
 
 Use this skill for scientific explanations and comparisons, even without a named
 paper. Never delegate retrieval to a sub-agent.
-
-## Match the user's intent
-
-- For a request to **learn a field or trace its development**, build a guided
-  technical route from the user's chosen starting point. Explain what each
-  transition made possible, the remaining limitation that motivated the next
-  route, and where current approaches diverge. Order the prerequisites needed
-  to follow that route, work through one representative mechanism concretely,
-  and offer a short understanding check when useful. Cite the primary papers
-  behind consequential transitions and distinguish their claims from your
-  synthesis. A timeline of paper names alone is insufficient. Treat the
-  requested starting point and scope as the boundary; do not turn this into an
-  experiment plan unless the user asks for one.
-- For a **literature survey or related-work request**, organize the retrieved
-  work around the user's question, methods, evidence, and open disagreements.
-  Keep the ranked discovery result when the user only asks for papers.
-
-Both paths use the retrieval and source-reading rules below. Pick the output
-shape that answers the request instead of applying a fixed report template.
 
 Use enabled literature connectors appropriate to the topic. General web search
 is a fallback only when relevant connectors provide no useful evidence. Do not
@@ -38,16 +19,15 @@ PDF to extract evidence is source access; opening its abstract first is unnecess
 - Prefer explaining through original figures, tables, and diagrams. For
   comparisons, choose visuals that cover the relevant alternatives; let the
   reader see the architecture, relationship, or result being explained.
-- When the user asks for a visual explanation, guide the reader through the
-  original visuals: what to notice, why it matters, and the caveats, grounded
-  in contextual author quotations.
+- Answer as a guided reading of those visuals, presenting them early. Keep
+  prose brief: what to notice, why it matters, and the caveats, grounded in
+  contextual author quotations.
 
-For a field-learning request, a concise route map, comparison table, or worked
-example may explain the development better than a paper figure. Use original
-visuals when they carry evidence that helps the explanation, without a fixed
-image count. If useful visuals are unavailable, explain the gap and continue
-with sourced text. One unavailable figure is not a reason to omit other
-accessible visuals.
+Visual evidence should replace standalone tutorials, generated comparison
+tables, and recitations of data or structure. Choose visuals for explanatory
+value, without a fixed image count. Text is the fallback when relevant sources
+contain no useful visual or extraction remains blocked; explain that gap.
+One unavailable figure is not a reason to omit other accessible visuals.
 
 Each command performs one search against public endpoints and emits its
 structured JSON result. No login is required:
@@ -224,19 +204,6 @@ Read a paper before using it as claim-level support. Discovery lists may link
 candidate titles, but must not imply that methods or findings were verified
 from snippets alone.
 
-Before presenting a pivotal numerical result or a causal account of why a
-method improved, check the original source at claim level:
-
-1. Record the exact table, figure, section, or passage that supports the claim.
-2. Check what the number measures, including unit, denominator, benchmark,
-   conditions, and whether it is a component latency or an end-to-end result.
-3. Check attribution: which part of the method or combination the authors
-   evaluated, and whether the evidence isolates the stated cause.
-
-If the source does not support the number or attribution as written, correct or
-qualify the claim; omit it when the needed evidence is unavailable. Apply this
-to load-bearing claims, not every background sentence.
-
 ## Original visuals
 
 Crop directly from the verified original PDF, using alphaXiv's linked PDF for
@@ -246,11 +213,8 @@ not the PDF asset; keep user-facing citations pointed at that viewer.
 Preserve panel titles, axes, legends, and table headings; exclude the printed
 caption and surrounding prose. Render legibly and inspect
 the crop. Do not substitute thumbnails, redraw results, or generate lookalikes.
-If extraction fails, inspect the error and try one viable alternate source or
-PDF tool. After those two attempts, stop retrying that figure. Link the exact
-paper and figure page when known, state that the image could not be embedded,
-and complete the sourced explanation. If the image itself is the requested
-deliverable, report the blocker explicitly.
+If extraction fails, inspect the error and try available PDF tooling; report
+an unresolved obstacle rather than silently omitting the figure.
 
 Save crops durably in the session working tree. Use the figure component with
 brief accessible alt text and a contextual caption in the Markdown title:
