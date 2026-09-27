@@ -854,8 +854,8 @@ mod tests {
                 ),
                 (
                     "approve-for-me",
-                    "Approve for me",
-                    "Codex reviews approval requests automatically"
+                    "Auto approval",
+                    "Codex may run a separate model to review approval requests; its usage is not reported here"
                 ),
                 (
                     "full-access",

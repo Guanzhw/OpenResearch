@@ -9136,6 +9136,12 @@ mod cap_tests {
             updated_at: 1,
         };
         store.create_chat_session(&session).unwrap();
+        store
+            .set_chat_session_context_usage(
+                "session",
+                session.context_usage_json.as_deref().unwrap(),
+            )
+            .unwrap();
         let host = Arc::new(ChatHost::new(
             Arc::new(AgentHost::new(None)),
             Arc::new(crate::local::codex::CodexHost::new()),
@@ -9187,6 +9193,9 @@ mod cap_tests {
                 .unwrap(),
             );
             store.create_chat_session(&codex).unwrap();
+            store
+                .set_chat_session_context_usage(id, codex.context_usage_json.as_deref().unwrap())
+                .unwrap();
             let mut events = host.subscribe();
             host.apply_compaction(&store, id, reseed).unwrap();
             let (name, payload) = events.try_recv().unwrap();
