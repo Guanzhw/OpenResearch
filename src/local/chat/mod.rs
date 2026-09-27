@@ -1736,8 +1736,8 @@ impl ChatHost {
                 }
                 usage.codex_session_usage.is_some().then_some(usage)
             });
-        if let Some(usage) = retained {
-            store.set_chat_session_context_usage(session_id, &serde_json::to_string(&usage)?)?;
+        if let Some(usage) = retained.as_ref() {
+            store.set_chat_session_context_usage(session_id, &serde_json::to_string(usage)?)?;
         } else {
             store.clear_chat_session_context_usage(session_id)?;
         }
@@ -1751,6 +1751,17 @@ impl ChatHost {
                 json!({ "session": session_json(&session, true) }),
             );
         }
+        // A session upsert preserves live usage when the stored value is null.
+        // Send an explicit zero reading so the open context meter resets now.
+        let reset_usage = retained.unwrap_or(ContextUsage {
+            used_tokens: 0,
+            context_window: None,
+            codex_session_usage: None,
+        });
+        self.emit(
+            "chat.usage",
+            json!({ "sessionId": session_id, "usage": reset_usage }),
+        );
         Ok(())
     }
 
@@ -9148,8 +9159,14 @@ mod cap_tests {
             Arc::new(crate::local::claude::ClaudeHost::new()),
         ));
 
+        let mut events = host.subscribe();
         host.apply_compaction(&store, "session", Some("the summary".into()))
             .unwrap();
+        assert_eq!(events.try_recv().unwrap().0, "chat.session");
+        let (name, payload) = events.try_recv().unwrap();
+        assert_eq!(name, "chat.usage");
+        assert_eq!(payload["sessionId"], "session");
+        assert_eq!(payload["usage"]["usedTokens"], 0);
 
         session = store.get_chat_session("session").unwrap().unwrap();
         assert_eq!(session.bootstrap_context.as_deref(), Some("the summary"));
@@ -9203,6 +9220,13 @@ mod cap_tests {
             assert_eq!(payload["session"]["contextUsage"]["usedTokens"], 0);
             assert_eq!(
                 payload["session"]["contextUsage"]["codexSessionUsage"]["cumulativeTokens"],
+                serde_json::json!(expected_total)
+            );
+            let (name, payload) = events.try_recv().unwrap();
+            assert_eq!(name, "chat.usage");
+            assert_eq!(payload["usage"]["usedTokens"], 0);
+            assert_eq!(
+                payload["usage"]["codexSessionUsage"]["cumulativeTokens"],
                 serde_json::json!(expected_total)
             );
             let after = store.get_chat_session(id).unwrap().unwrap();
