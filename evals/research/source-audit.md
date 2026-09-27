@@ -22,6 +22,22 @@ Original source: [Huang et al., Sections 3.2–3.4 and Tables 1–2](https://arx
 - Table 2 ablates three components: without action translation 31.49%, without dynamic example 50.86%, and without trajectory correction 55.19% executability, against 78.57% for the full method. Translation has the largest ablation effect among these, while the other components also contribute.
 - Correctness and executability differ. Table 1 reports 64.87% correctness for Vanilla Codex 12B and 54.88% for the translated version; a report should not turn improved executability into an unqualified overall improvement.
 
+## `molmoact-action-representation`
+
+Sources: [MolmoAct, Section 2.3](https://arxiv.org/html/2508.07917); [Action Hallucination, Section 1](https://arxiv.org/html/2602.06339).
+
+- MolmoAct describes autoregressive action tokens in Section 2.3. Check that the report verifies and names this architecture against the original paper.
+- Action Hallucination places MolmoAct among conditional flow/diffusion examples in Section 1. Compare that characterization directly with MolmoAct and require the report to state the discrepancy.
+- A general account of action-model families does not resolve this claim; the report should identify MolmoAct and cite both source locations.
+
+## `embodied-closed-loop-history`
+
+Sources: [RT-1](https://arxiv.org/html/2212.06817); [RT-2](https://arxiv.org/html/2307.15818); [Embodied-R1.5](https://arxiv.org/html/2606.11324).
+
+- Check RT-1 and RT-2 for pre-2025 low-level robot control that repeatedly uses observations to produce actions. The report should not date the beginning of closed-loop robot control to 2025–26.
+- Check Embodied-R1.5 for task-level planning, monitoring, and replanning. Distinguish this reasoning loop from the earlier perception-to-action control loop and state which level any novelty claim concerns.
+- Require source locations for each paper used to establish the chronology and the distinction between control levels.
+
 ## `driving-end-to-end-history`
 
 This confirmation case has no fixed answer outline. The reviewer should check selected original papers for chronology, claimed problem/solution links, evaluation setting, and the limits of each route. Add source anchors only **after** the candidate has been selected; if anchors become new scoring rules, start a new round and rerun the control.

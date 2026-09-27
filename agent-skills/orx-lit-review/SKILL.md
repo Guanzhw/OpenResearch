@@ -17,7 +17,11 @@ paper. Never delegate retrieval to a sub-agent.
   to follow that route, work through one representative mechanism concretely,
   and offer a short understanding check when useful. Cite the primary papers
   behind consequential transitions and distinguish their claims from your
-  synthesis. A timeline of paper names alone is insufficient. Treat the
+  synthesis. Explain in the body any transition that carries the summary or
+  conclusion; listing its paper as further reading is insufficient. When a
+  later paper appears to introduce a capability, check whether the preceding
+  work already had a narrower form and name the actual change. A timeline of
+  paper names alone is insufficient. Treat the
   requested starting point and scope as the boundary; do not turn this into an
   experiment plan unless the user asks for one.
 - For a **literature survey or related-work request**, organize the retrieved
@@ -232,6 +236,11 @@ method improved, check the original source at claim level:
    conditions, and whether it is a component latency or an end-to-end result.
 3. Check attribution: which part of the method or combination the authors
    evaluated, and whether the evidence isolates the stated cause.
+
+When a named model's architecture anchors a comparison or a route, verify its
+action or prediction method in that model's own paper. A survey or analysis
+paper can motivate the comparison, but its classification of another model
+does not replace the original method description. State any disagreement.
 
 If the source does not support the number or attribution as written, correct or
 qualify the claim; omit it when the needed evidence is unavailable. Apply this

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "suite_version": "0.1.0",
+  "suite_version": "0.2.0",
   "cases": [
     {
       "id": "embodied-transformer-history",
@@ -37,6 +37,32 @@
         "不把完整方法的提升全归功于动作翻译一个组件",
         "区分可执行性与正确性",
         "数字和消融结论是否与原论文一致"
+      ]
+    },
+    {
+      "id": "molmoact-action-representation",
+      "split": "development",
+      "kind": "source-check",
+      "prompt": "请比较 MolmoAct（arXiv:2508.07917）与 Action Hallucination（arXiv:2602.06339）对 MolmoAct 动作生成架构的描述。根据 MolmoAct 原论文 §2.3 核实其动作表示与生成方式，并指出 Action Hallucination §1 的归类是否与原论文一致。提供简短、可核查的中文说明。",
+      "primary_source": "https://arxiv.org/html/2508.07917",
+      "source_locator": "Section 2.3",
+      "review_focus": [
+        "是否依据 MolmoAct 原论文核实其自回归动作 token 架构",
+        "是否将 Action Hallucination §1 对 MolmoAct 的条件流/扩散归类与原论文直接对照，并说明差异",
+        "是否点名被讨论的架构并给出可追溯的原文位置"
+      ]
+    },
+    {
+      "id": "embodied-closed-loop-history",
+      "split": "development",
+      "kind": "source-check",
+      "prompt": "请基于 RT-1（arXiv:2212.06817）、RT-2（arXiv:2307.15818）和 Embodied-R1.5（arXiv:2606.11324）原论文，梳理具身机器人闭环能力的演进，区分早期低层控制闭环与后来的任务层计划、监测和重规划，并核实闭环能力是否到 2025–26 年才出现。提供简短、可核查的中文说明。",
+      "primary_source": "https://arxiv.org/html/2212.06817",
+      "source_locator": "RT-1 architecture and real-world evaluation",
+      "review_focus": [
+        "是否用 RT-1 和 RT-2 原论文核实 2025 年前已有的低层视觉到动作闭环控制",
+        "是否把 Embodied-R1.5 的任务层计划、监测和重规划与低层控制闭环区分开",
+        "是否避免声称闭环能力直到 2025–26 年才出现，并为时间与能力范围提供原文位置"
       ]
     },
     {

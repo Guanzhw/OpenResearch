@@ -1,8 +1,8 @@
-# Research report evaluation set (v0)
+# Research report evaluation set (v0.2.0)
 
 This set tests whether OpenResearch's field-learning workflow makes a **user-facing research report** more useful. The main outcome is the user's blind preference between two reports. A source audit and total run cost explain that choice; neither replaces it.
 
-`cases.json` freezes four tasks. The first is the user's original topic, embodied intelligence since Transformer. Two smaller cases probe claim-level reading of original papers. The driving-history case is reserved for confirmation after development choices are settled. Keep a case's prompt and review criteria fixed within a comparison round; if they change, version the round and rerun its control.
+`cases.json` v0.2.0 freezes six tasks: the original field report on embodied intelligence since Transformer, four development source checks on π0 latency, VirtualHome attribution, MolmoAct's action representation, and the history of closed-loop robot control, plus one driving-history confirmation case. Round 003 remains tied to its frozen v0.1.0 casebook snapshot; these additions apply to later rounds. Keep a case's prompt and review criteria fixed within a comparison round; if they change, version the round and rerun its control.
 
 ## Set up a real paired run
 
