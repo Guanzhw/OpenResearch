@@ -320,22 +320,24 @@ fn fingerprint(brief: &str, locale: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-const SYSTEM_PROMPT: &str = "You help a researcher start work in an AI research \
-workspace where a coding agent runs experiments for them. You reply with JSON only.";
+const SYSTEM_PROMPT: &str = "You help a researcher learn a field or start experiments \
+in an AI research workspace. You reply with JSON only.";
 
 fn generation_prompt(brief: &str, locale: &str) -> String {
     format!(
-        "Below is a brief of a research project a user just opened. Write the four \
-         messages the user should send to their research agent, in order, to move \
-         from this exact starting point to running a first experiment.\n\n\
+        "Below is a brief of a research project a user just opened. Write four \
+         independent starting messages the user could send to their research \
+         agent. The user may want to learn before deciding whether to experiment.\n\n\
          Rules:\n\
          - Every prompt must be about THIS project: name its actual method, files, \
          datasets, models, hyperparameters, claims, or gaps from the brief. Generic \
          advice that would fit any project is wrong.\n\
-         - The four prompts progress: (1) understand the specific starting point, \
-         (2) find the open question or weakness worth testing, (3) get a runnable \
-         baseline with a concrete run command, (4) launch a first experiment with \
-         one concrete, cheap-to-test hypothesis.\n\
+         - Offer these choices: (1) learn the field relevant to this project \
+         through its technical development, prerequisites, one worked mechanism, \
+         and primary sources; do not ask for an experiment in this prompt, \
+         (2) survey the specific related work and open questions, \
+         (3) establish a runnable baseline with a concrete run command, \
+         (4) launch one cheap first experiment when appropriate.\n\
          - Write each prompt as the user speaking to the agent, 1-3 sentences, \
          plain text, no markdown.\n\
          - Each title is at most five words.\n\
@@ -647,6 +649,15 @@ mod tests {
         assert!(is_blank(None, &[]));
         assert!(!is_blank(None, &["train.py".to_string()]));
         assert!(!is_blank(Some("2401.12345"), &[]));
+    }
+
+    #[test]
+    fn generated_starters_offer_learning_without_requiring_an_experiment() {
+        let prompt = generation_prompt("Tiny Transformer", "en");
+        assert!(prompt.contains("independent starting messages"));
+        assert!(prompt.contains("learn the field relevant to this project"));
+        assert!(prompt.contains("do not ask for an experiment in this prompt"));
+        assert!(prompt.contains("launch one cheap first experiment when appropriate"));
     }
 
     #[test]

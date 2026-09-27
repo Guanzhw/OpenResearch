@@ -15,6 +15,16 @@ pub struct Skill {
 
 const LIT_REVIEW_TEMPLATE: &str = include_str!("../../agent-skills/orx-lit-review/SKILL.md");
 
+const LEARN_FIELD_TEMPLATE: &str = r#"Help the user learn a research field: {request}
+
+Load and follow `orx-lit-review`, using its field-learning path for primary-source
+retrieval, claim-level reading, and citations. Start at the user's chosen
+boundary. Explain the causal technical route, prerequisites, and one worked
+mechanism; show where routes diverge and what remains uncertain. Make a readable
+learning report. If the user asks for a saved report, use `orx-reports` for the
+artifact. Do not plan or launch an experiment unless requested.
+"#;
+
 const REPRODUCE_PAPER_TEMPLATE: &str = r#"Reproduce a research paper claim by claim on the user's compute.
 
 Paper and compute: {request}
@@ -110,6 +120,12 @@ Method:
 
 pub const CATALOG: &[Skill] = &[
     Skill {
+        name: "learn-field",
+        description: "Learn a field's technical development from primary research",
+        template: LEARN_FIELD_TEMPLATE,
+        empty_request: "(none given — ask the user which field or topic to learn and where to start)",
+    },
+    Skill {
         name: "lit-review",
         description: "Multi-hop literature review across alphaXiv, OpenAlex, bioRxiv, and PubMed",
         template: LIT_REVIEW_TEMPLATE,
@@ -184,6 +200,16 @@ mod tests {
     fn expands_bare_invocation_to_ask() {
         let out = expand("lit-review", false).unwrap();
         assert!(out.contains("ask the user"));
+    }
+
+    #[test]
+    fn learn_field_uses_the_literature_skill_without_launching_an_experiment() {
+        let prompt = expand("learn-field", true).unwrap();
+        assert!(prompt.contains("Load and follow `orx-lit-review`"));
+        assert!(prompt.contains("field-learning path"));
+        assert!(prompt.contains("Do not plan or launch an experiment unless requested"));
+        let bare = expand("learn-field", false).unwrap();
+        assert!(bare.contains("ask the user which field or topic"));
     }
 
     #[test]

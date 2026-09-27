@@ -195,6 +195,7 @@ async fn merge_projection(
             ctx.report_usage(ContextUsage {
                 used_tokens: used,
                 context_window: None,
+                codex_session_usage: None,
             });
         }
         if let Some(retry) = message.get("retry").filter(|retry| !retry.is_null()) {

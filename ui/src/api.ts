@@ -1867,6 +1867,23 @@ export interface ChatMessage {
 export interface ContextUsage {
   usedTokens: number;
   contextWindow?: number;
+  /** Codex native-thread totals and chat turn time; omitted for other harnesses. */
+  codexSessionUsage?: CodexSessionUsage;
+}
+
+export interface CodexSessionUsage {
+  /** Present only when Codex reports a native-thread token total. */
+  cumulativeTokens?: number;
+  cumulativeInputTokens?: number;
+  /** Cached input is already included in cumulativeInputTokens. */
+  cumulativeCachedInputTokens?: number;
+  cumulativeOutputTokens?: number;
+  /** Sum of completed Codex assistant turn durations. */
+  elapsedMs?: number;
+  /** Approval route selected for the current Codex run, when known. */
+  approvalPath?: "auto_review" | "user" | "disabled";
+  /** Codex reports review state but no reviewer token or cost breakdown. */
+  autoReviewUsageUnavailable?: boolean;
 }
 
 export interface ChatSession {

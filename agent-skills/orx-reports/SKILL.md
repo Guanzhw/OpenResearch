@@ -47,3 +47,11 @@ In the chat handoff, link every finished output using the session playbook's
 evidence-and-links contract, including the full nested path, for example
 `<file path="artifacts/transformer-sweep/figures/patch-size.svg" />`.
 Load `orx-evidence` when the report makes claims derived from run results.
+
+For a research report grounded in literature, review its pivotal numerical and
+causal claims before handing it off. For each, verify the primary-source
+table, figure, section, or passage; the measure's unit, denominator, benchmark,
+and conditions; and whether the source attributes the result to the stated
+component or to a combined method. Correct, qualify, or remove unsupported
+claims, and link the precise source location. This is a focused final check of
+the report's conclusions, not a reason to re-run the whole literature search.

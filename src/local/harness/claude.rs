@@ -1882,6 +1882,7 @@ fn apply_event(ctx: &mut TurnCtx, state: &mut TurnState, event: &Value) -> bool 
                 ctx.report_usage(ContextUsage {
                     used_tokens: used,
                     context_window: None,
+                    codex_session_usage: None,
                 });
             }
         }
@@ -2060,6 +2061,7 @@ fn report_result_usage(ctx: &mut TurnCtx, event: &Value) -> Option<u64> {
         ctx.report_usage(ContextUsage {
             used_tokens: used,
             context_window,
+            codex_session_usage: None,
         });
     }
     event_used
@@ -3506,6 +3508,7 @@ mod tests {
         ctx.context_usage = Some(ContextUsage {
             used_tokens: 123,
             context_window: Some(200000),
+            codex_session_usage: None,
         });
         let result = serde_json::json!({
             "type": "result",

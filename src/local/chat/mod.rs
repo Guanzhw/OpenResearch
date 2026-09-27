@@ -1076,6 +1076,40 @@ pub struct ContextUsage {
     /// Total context window of the model, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
+    /// Codex thread totals and reviewer telemetry, separate from the latest
+    /// context-window occupancy. Older persisted usage objects omit this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_session_usage: Option<CodexSessionUsage>,
+}
+
+/// Codex native-thread usage plus completed OpenResearch chat turn time.
+/// Other Codex threads, including subagents, may have separate usage.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexSessionUsage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cumulative_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cumulative_input_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cumulative_cached_input_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cumulative_output_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_path: Option<CodexApprovalPath>,
+    /// The app-server reports review state, but no token or cost breakdown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_review_usage_unavailable: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CodexApprovalPath {
+    AutoReview,
+    User,
+    Disabled,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1672,6 +1706,7 @@ impl ChatHost {
         session_id: &str,
         reseed: Option<String>,
     ) -> Result<()> {
+        let replaces_native_thread = reseed.is_some();
         // Native id last: a crash before it lands leaves the summary unused
         // rather than a session with no context at all.
         if let Some(summary) = reseed {
@@ -1680,9 +1715,42 @@ impl ChatHost {
             store.set_chat_session_bootstrap_context(session_id, Some(&summary))?;
             store.set_chat_session_native_id(session_id, None)?;
         }
-        store.clear_chat_session_context_usage(session_id)?;
+        // A compacted context is empty, but Codex's native thread total and
+        // this chat's completed-turn time are different measurements. Native
+        // compaction keeps the thread; fallback compaction starts a new one.
+        let retained = store
+            .get_chat_session(session_id)?
+            .and_then(|session| session.context_usage_json)
+            .and_then(|json| serde_json::from_str::<ContextUsage>(&json).ok())
+            .and_then(|mut usage| {
+                usage.used_tokens = 0;
+                usage.context_window = None;
+                if replaces_native_thread {
+                    if let Some(thread) = &mut usage.codex_session_usage {
+                        thread.cumulative_tokens = None;
+                        thread.cumulative_input_tokens = None;
+                        thread.cumulative_cached_input_tokens = None;
+                        thread.cumulative_output_tokens = None;
+                        thread.approval_path = None;
+                    }
+                }
+                usage.codex_session_usage.is_some().then_some(usage)
+            });
+        if let Some(usage) = retained {
+            store.set_chat_session_context_usage(session_id, &serde_json::to_string(&usage)?)?;
+        } else {
+            store.clear_chat_session_context_usage(session_id)?;
+        }
         // Compacting is activity, and activity unarchives as sending does.
         store.set_chat_session_archived(session_id, false)?;
+        // The context ring and thread totals must update for an open dashboard
+        // immediately, not only when the next agent turn reports usage.
+        if let Some(session) = store.get_chat_session(session_id)? {
+            self.emit(
+                "chat.session",
+                json!({ "session": session_json(&session, true) }),
+            );
+        }
         Ok(())
     }
 
@@ -5700,6 +5768,7 @@ impl ChatHost {
                 false
             };
             ctx.assistant.completed_at = Some(now_ms());
+            ctx.record_codex_elapsed();
             let _ = ctx.flush();
             if let Some(path) = ctx.target_event_path.as_ref() {
                 let _ = std::fs::remove_file(path);
@@ -7329,12 +7398,128 @@ impl TurnCtx {
             if usage.context_window.is_none() {
                 usage.context_window = prev.context_window;
             }
+            match (&prev.codex_session_usage, &mut usage.codex_session_usage) {
+                (Some(previous), Some(current)) => {
+                    if current.cumulative_tokens.is_none() {
+                        current.cumulative_tokens = previous.cumulative_tokens;
+                    }
+                    if current.cumulative_input_tokens.is_none() {
+                        current.cumulative_input_tokens = previous.cumulative_input_tokens;
+                    }
+                    if current.cumulative_cached_input_tokens.is_none() {
+                        current.cumulative_cached_input_tokens =
+                            previous.cumulative_cached_input_tokens;
+                    }
+                    if current.cumulative_output_tokens.is_none() {
+                        current.cumulative_output_tokens = previous.cumulative_output_tokens;
+                    }
+                    if current.elapsed_ms.is_none() {
+                        current.elapsed_ms = previous.elapsed_ms;
+                    }
+                    if current.approval_path.is_none() {
+                        current.approval_path = previous.approval_path;
+                    }
+                    if current.auto_review_usage_unavailable.is_none() {
+                        current.auto_review_usage_unavailable =
+                            previous.auto_review_usage_unavailable;
+                    }
+                }
+                (Some(previous), None) => {
+                    usage.codex_session_usage = Some(previous.clone());
+                }
+                (None, _) => {}
+            }
         }
         self.context_usage = Some(usage.clone());
         self.host.emit(
             "chat.usage",
             json!({ "sessionId": self.session_id, "usage": usage }),
         );
+    }
+
+    /// Merge explicitly reported Codex session telemetry into the stored
+    /// usage object, preserving its latest context-window reading.
+    pub fn update_codex_session_usage(&mut self, update: CodexSessionUsage) {
+        let mut usage = self.context_usage.clone().unwrap_or(ContextUsage {
+            used_tokens: 0,
+            context_window: None,
+            codex_session_usage: None,
+        });
+        let mut current = usage.codex_session_usage.take().unwrap_or_default();
+        if update.cumulative_tokens.is_some() {
+            current.cumulative_tokens = update.cumulative_tokens;
+        }
+        if update.cumulative_input_tokens.is_some() {
+            current.cumulative_input_tokens = update.cumulative_input_tokens;
+        }
+        if update.cumulative_cached_input_tokens.is_some() {
+            current.cumulative_cached_input_tokens = update.cumulative_cached_input_tokens;
+        }
+        if update.cumulative_output_tokens.is_some() {
+            current.cumulative_output_tokens = update.cumulative_output_tokens;
+        }
+        if update.elapsed_ms.is_some() {
+            current.elapsed_ms = update.elapsed_ms;
+        }
+        if update.approval_path.is_some() {
+            current.approval_path = update.approval_path;
+        }
+        if update.auto_review_usage_unavailable.is_some() {
+            current.auto_review_usage_unavailable = update.auto_review_usage_unavailable;
+        }
+        usage.codex_session_usage = Some(current);
+        self.report_usage(usage);
+    }
+
+    /// A replacement native Codex thread has its own token counter. Retain
+    /// chat-level elapsed time and prior unreported review usage, then wait for
+    /// the new thread's first explicit usage event.
+    pub fn reset_codex_thread_usage(&mut self) {
+        let Some(mut usage) = self.context_usage.take() else {
+            return;
+        };
+        usage.used_tokens = 0;
+        usage.context_window = None;
+        if let Some(thread) = &mut usage.codex_session_usage {
+            thread.cumulative_tokens = None;
+            thread.cumulative_input_tokens = None;
+            thread.cumulative_cached_input_tokens = None;
+            thread.cumulative_output_tokens = None;
+            thread.approval_path = None;
+        }
+        self.report_usage(usage);
+    }
+
+    /// Count this completed Codex assistant turn once. The cumulative token
+    /// total remains unavailable unless Codex reported a session-wide total.
+    pub fn record_codex_elapsed(&mut self) {
+        if self.harness != "codex" {
+            return;
+        }
+        let Some(completed_at) = self.assistant.completed_at else {
+            return;
+        };
+        let elapsed_ms =
+            u64::try_from(completed_at.saturating_sub(self.assistant.created_at)).unwrap_or(0);
+        let prior_elapsed_ms = self
+            .context_usage
+            .as_ref()
+            .and_then(|usage| usage.codex_session_usage.as_ref())
+            .and_then(|usage| usage.elapsed_ms)
+            .unwrap_or(0);
+        self.update_codex_session_usage(CodexSessionUsage {
+            elapsed_ms: Some(prior_elapsed_ms.saturating_add(elapsed_ms)),
+            ..CodexSessionUsage::default()
+        });
+    }
+
+    /// A completed auto-approval review is visible, but Codex does not attach
+    /// reviewer token or cost usage to that event.
+    pub fn mark_codex_auto_review_usage_unavailable(&mut self) {
+        self.update_codex_session_usage(CodexSessionUsage {
+            auto_review_usage_unavailable: Some(true),
+            ..CodexSessionUsage::default()
+        });
     }
 
     /// Insert or replace a part by id, preserving arrival order.
@@ -8925,7 +9110,7 @@ mod cap_tests {
     }
 
     #[test]
-    fn the_reseed_hands_the_next_turn_a_summary_and_no_native_session() {
+    fn compaction_reseeds_and_preserves_codex_telemetry() {
         let dir = std::env::temp_dir().join(format!("orx-compact-reseed-{}", uuid::Uuid::new_v4()));
         let store = Store::open_at(dir.clone()).unwrap();
         let mut session = StoredChatSession {
@@ -8978,6 +9163,52 @@ mod cap_tests {
             "next".into(),
         )
         .contains("the summary"));
+
+        for (id, reseed, expected_total) in [
+            ("codex-native", None, Some(1200)),
+            ("codex-fallback", Some("new summary".to_string()), None),
+        ] {
+            let mut codex = session.clone();
+            codex.id = id.into();
+            codex.harness = "codex".into();
+            codex.native_session_id = Some(format!("native-{id}"));
+            codex.bootstrap_context = None;
+            codex.context_usage_json = Some(
+                serde_json::to_string(&ContextUsage {
+                    used_tokens: 800,
+                    context_window: Some(10000),
+                    codex_session_usage: Some(CodexSessionUsage {
+                        cumulative_tokens: Some(1200),
+                        elapsed_ms: Some(250),
+                        approval_path: Some(CodexApprovalPath::AutoReview),
+                        ..CodexSessionUsage::default()
+                    }),
+                })
+                .unwrap(),
+            );
+            store.create_chat_session(&codex).unwrap();
+            let mut events = host.subscribe();
+            host.apply_compaction(&store, id, reseed).unwrap();
+            let (name, payload) = events.try_recv().unwrap();
+            assert_eq!(name, "chat.session");
+            assert_eq!(payload["session"]["contextUsage"]["usedTokens"], 0);
+            assert_eq!(
+                payload["session"]["contextUsage"]["codexSessionUsage"]["cumulativeTokens"],
+                serde_json::json!(expected_total)
+            );
+            let after = store.get_chat_session(id).unwrap().unwrap();
+            let usage: ContextUsage =
+                serde_json::from_str(after.context_usage_json.as_deref().unwrap()).unwrap();
+            assert_eq!(usage.used_tokens, 0);
+            assert_eq!(usage.context_window, None);
+            let codex_usage = usage.codex_session_usage.unwrap();
+            assert_eq!(codex_usage.cumulative_tokens, expected_total);
+            assert_eq!(codex_usage.elapsed_ms, Some(250));
+            assert_eq!(
+                codex_usage.approval_path,
+                expected_total.map(|_| CodexApprovalPath::AutoReview)
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -9789,15 +10020,107 @@ mod bridge_tests {
 
     #[test]
     fn context_usage_serde_camel_cases_and_skips_none() {
+        let context_only = ContextUsage {
+            used_tokens: 100,
+            context_window: None,
+            codex_session_usage: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&context_only).unwrap(),
+            json!({ "usedTokens": 100 })
+        );
+
         let usage = ContextUsage {
             used_tokens: 100,
             context_window: None,
+            codex_session_usage: Some(CodexSessionUsage {
+                cumulative_tokens: Some(1200),
+                cumulative_input_tokens: Some(900),
+                cumulative_cached_input_tokens: Some(100),
+                cumulative_output_tokens: Some(300),
+                elapsed_ms: Some(5000),
+                approval_path: Some(CodexApprovalPath::AutoReview),
+                auto_review_usage_unavailable: Some(true),
+            }),
         };
-        // Only usedTokens survives; the None window is skipped.
+        // Optional context data stays absent while real session statistics
+        // serialize separately from the latest context occupancy.
         assert_eq!(
             serde_json::to_value(&usage).unwrap(),
-            json!({ "usedTokens": 100 })
+            json!({
+                "usedTokens": 100,
+                "codexSessionUsage": {
+                    "cumulativeTokens": 1200,
+                    "cumulativeInputTokens": 900,
+                    "cumulativeCachedInputTokens": 100,
+                    "cumulativeOutputTokens": 300,
+                    "elapsedMs": 5000,
+                    "approvalPath": "auto_review",
+                    "autoReviewUsageUnavailable": true
+                }
+            })
         );
+
+        // Previously persisted flat objects remain readable.
+        let legacy: ContextUsage =
+            serde_json::from_value(json!({ "usedTokens": 100, "contextWindow": 1000 })).unwrap();
+        assert_eq!(legacy.codex_session_usage, None);
+    }
+
+    #[test]
+    fn codex_elapsed_accumulates_completed_turn_time_and_preserves_token_totals() {
+        let mut ctx = TurnCtx::test_stub();
+        ctx.harness = "codex".into();
+        ctx.assistant.created_at = 1000;
+        ctx.assistant.completed_at = Some(1750);
+        ctx.context_usage = Some(ContextUsage {
+            used_tokens: 800,
+            context_window: Some(10000),
+            codex_session_usage: Some(CodexSessionUsage {
+                cumulative_tokens: Some(1200),
+                elapsed_ms: Some(250),
+                auto_review_usage_unavailable: None,
+                ..CodexSessionUsage::default()
+            }),
+        });
+
+        ctx.record_codex_elapsed();
+
+        let usage = ctx.context_usage.unwrap();
+        assert_eq!(usage.used_tokens, 800);
+        assert_eq!(usage.context_window, Some(10000));
+        let session = usage.codex_session_usage.unwrap();
+        assert_eq!(session.cumulative_tokens, Some(1200));
+        assert_eq!(session.elapsed_ms, Some(1000));
+    }
+
+    #[test]
+    fn replacement_codex_thread_resets_only_thread_scoped_usage() {
+        let mut ctx = TurnCtx::test_stub();
+        ctx.context_usage = Some(ContextUsage {
+            used_tokens: 800,
+            context_window: Some(10000),
+            codex_session_usage: Some(CodexSessionUsage {
+                cumulative_tokens: Some(1200),
+                cumulative_input_tokens: Some(1000),
+                elapsed_ms: Some(250),
+                approval_path: Some(CodexApprovalPath::AutoReview),
+                auto_review_usage_unavailable: Some(true),
+                ..CodexSessionUsage::default()
+            }),
+        });
+
+        ctx.reset_codex_thread_usage();
+
+        let usage = ctx.context_usage.unwrap();
+        assert_eq!(usage.used_tokens, 0);
+        assert_eq!(usage.context_window, None);
+        let thread = usage.codex_session_usage.unwrap();
+        assert_eq!(thread.cumulative_tokens, None);
+        assert_eq!(thread.cumulative_input_tokens, None);
+        assert_eq!(thread.approval_path, None);
+        assert_eq!(thread.elapsed_ms, Some(250));
+        assert_eq!(thread.auto_review_usage_unavailable, Some(true));
     }
 }
 

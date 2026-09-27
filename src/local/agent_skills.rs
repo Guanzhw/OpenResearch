@@ -179,7 +179,7 @@ const S_AGENT_DELEGATION: AgentSkill = AgentSkill {
 };
 const S_LIT: AgentSkill = AgentSkill {
     name: "orx-lit-review",
-    description: "Explain and compare scientific or technical concepts using original research evidence. Use before answering conceptual or architectural questions, research claims, literature reviews, or related-work requests, even when no paper, citation, or search is requested. Retrieve with relevant alphaXiv, OpenAlex, bioRxiv, and PubMed connectors; scale retrieval to the question.",
+    description: "Learn a field, trace technical developments, or explain and compare scientific concepts using original research evidence. Use before answering conceptual questions, research claims, literature reviews, or related-work requests, even without a named paper. Retrieve with relevant alphaXiv, OpenAlex, bioRxiv, and PubMed connectors; scale retrieval to the question.",
     content: LIT,
     resources: &[],
 };

@@ -4126,7 +4126,7 @@ function SessionRow({
 
 // --- panel -------------------------------------------------------------------
 
-// The four starter prompts progress starting point → gap → baseline → experiment.
+// The four starter prompts offer learning, literature, baseline, and experiment paths.
 const STARTER_ICONS = [BookOpen, Search, SquareTerminal, FlaskConical];
 // A blank project has nothing for a model to read, so its prompts are pre-written.
 const blankStarterPrompts = (): StarterPrompt[] => [

@@ -52,9 +52,10 @@ use super::{
 };
 use crate::error::{anyhow, Result};
 use crate::local::chat::{
-    find_part_mut, prepare_env, set_chat_session_env, upsert_preserving_children, ContextUsage,
-    DeliveryState, MessagePhase, PromptAnswer, ResumeCtx, SteerMessage, TurnCtx, WireMessage,
-    WirePart, WirePrompt, WireQuestionOption, WireToolState,
+    find_part_mut, prepare_env, set_chat_session_env, upsert_preserving_children,
+    CodexApprovalPath, CodexSessionUsage, ContextUsage, DeliveryState, MessagePhase, PromptAnswer,
+    ResumeCtx, SteerMessage, TurnCtx, WireMessage, WirePart, WirePrompt, WireQuestionOption,
+    WireToolState,
 };
 use crate::local::codex::{CodexClient, JsonRpcError, ServerReqKind, TurnEvent};
 use crate::local::native_store::{self, NativeStore};
@@ -94,24 +95,85 @@ const CODEX_MODELS: [(&str, &[&str]); 4] = [
 /// payload isn't real occupancy and must not render "0%").
 fn codex_used_tokens(usage: Option<&Value>) -> Option<u64> {
     let usage = usage?;
-    let field = |name: &str| usage.get(name).and_then(Value::as_u64).unwrap_or(0);
-    let total = field("input_tokens") + field("output_tokens");
+    if let Some(total) = usage
+        .get("total_tokens")
+        .or_else(|| usage.get("totalTokens"))
+        .and_then(Value::as_u64)
+    {
+        return (total > 0).then_some(total);
+    }
+    let input = usage
+        .get("input_tokens")
+        .or_else(|| usage.get("inputTokens"))
+        .and_then(Value::as_u64);
+    let output = usage
+        .get("output_tokens")
+        .or_else(|| usage.get("outputTokens"))
+        .and_then(Value::as_u64);
+    let total = match (input, output) {
+        (None, None) => usage
+            .get("totalTokens")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        (input, output) => input.unwrap_or(0).saturating_add(output.unwrap_or(0)),
+    };
     (total > 0).then_some(total)
 }
 
-/// Read a legacy-exec `token_count` `info` object into (occupancy, window).
+/// Convert an explicitly reported native-thread total. Cached input is a
+/// subset of input tokens and is kept as a separate display field.
+fn codex_session_usage_totals(usage: Option<&Value>) -> Option<CodexSessionUsage> {
+    let usage = usage?;
+    let field = |snake: &str, camel: &str| {
+        usage
+            .get(snake)
+            .or_else(|| usage.get(camel))
+            .and_then(Value::as_u64)
+    };
+    let cumulative_input_tokens = field("input_tokens", "inputTokens");
+    let cumulative_cached_input_tokens = field("cached_input_tokens", "cachedInputTokens");
+    let cumulative_output_tokens = field("output_tokens", "outputTokens");
+    let cumulative_tokens = field("total_tokens", "totalTokens").or_else(|| {
+        match (cumulative_input_tokens, cumulative_output_tokens) {
+            (None, None) => None,
+            (input, output) => Some(input.unwrap_or(0).saturating_add(output.unwrap_or(0))),
+        }
+    });
+    if cumulative_tokens.is_none()
+        && cumulative_input_tokens.is_none()
+        && cumulative_cached_input_tokens.is_none()
+        && cumulative_output_tokens.is_none()
+    {
+        return None;
+    }
+    Some(CodexSessionUsage {
+        cumulative_tokens,
+        cumulative_input_tokens,
+        cumulative_cached_input_tokens,
+        cumulative_output_tokens,
+        ..CodexSessionUsage::default()
+    })
+}
+
+/// Read a legacy-exec `token_count` `info` object into latest occupancy,
+/// context-window size, and explicit session totals.
 /// `last_token_usage` is the most recent request, whose `input_tokens` already
 /// contains the full resent context — that IS the context occupancy (what the
 /// codex TUI shows), and it matches the app-server's per-turn `turn.usage`.
-/// `total_token_usage` is a running sum across every request in the session (it
+/// `total_token_usage` is a running sum across requests in that Codex thread (it
 /// only grows), so it's the fallback, not the preference.
-fn token_count_usage(info: &Value) -> (Option<u64>, Option<u64>) {
+fn token_count_usage(info: &Value) -> (Option<u64>, Option<u64>, Option<CodexSessionUsage>) {
+    let total_usage = info.get("total_token_usage").filter(|v| !v.is_null());
     let usage = info
         .get("last_token_usage")
         .filter(|v| !v.is_null())
-        .or_else(|| info.get("total_token_usage"));
+        .or(total_usage);
     let window = info.get("model_context_window").and_then(Value::as_u64);
-    (codex_used_tokens(usage), window)
+    (
+        codex_used_tokens(usage),
+        window,
+        codex_session_usage_totals(total_usage),
+    )
 }
 
 /// The harness-wide fallback list — the conservative intersection, used for a
@@ -850,8 +912,8 @@ impl Harness for Codex {
                     ),
                     OptionChoice::described(
                         "approve-for-me",
-                        "Approve for me",
-                        "Codex reviews approval requests automatically",
+                        "Auto approval",
+                        "Codex may run a separate model to review approval requests; its usage is not reported here",
                     ),
                     OptionChoice::described(
                         "full-access",
@@ -1371,8 +1433,41 @@ fn apply_notification(ctx: &mut TurnCtx, method: &str, params: &Value) -> Option
         // Codex 0.144 emits this before the typed review event; ignoring it avoids duplicate rows.
         "guardianWarning" => {}
         "item/autoApprovalReview/started" | "item/autoApprovalReview/completed" => {
+            ctx.mark_codex_auto_review_usage_unavailable();
             if let Some(message) = guardian_review_failure(params) {
                 ctx.push_error(message);
+            }
+        }
+        "thread/tokenUsage/updated" => {
+            // This notification reports both the latest request and the
+            // session total. Keep the former in the context meter and the
+            // latter in the separate Codex session summary.
+            if params.get("threadId").and_then(Value::as_str) != ctx.native_session_id.as_deref() {
+                return None;
+            }
+            let token_usage = params.get("tokenUsage").unwrap_or(&Value::Null);
+            let last = token_usage.get("last");
+            let latest_tokens = codex_used_tokens(last);
+            let context_window = token_usage
+                .get("modelContextWindow")
+                .and_then(Value::as_u64);
+            let session_usage = codex_session_usage_totals(token_usage.get("total"));
+            if latest_tokens.is_some() || context_window.is_some() || session_usage.is_some() {
+                let mut usage = ctx.context_usage.clone().unwrap_or(ContextUsage {
+                    used_tokens: 0,
+                    context_window: None,
+                    codex_session_usage: None,
+                });
+                if let Some(used_tokens) = latest_tokens {
+                    usage.used_tokens = used_tokens;
+                }
+                if context_window.is_some() {
+                    usage.context_window = context_window;
+                }
+                if let Some(session_usage) = session_usage {
+                    usage.codex_session_usage = Some(session_usage);
+                }
+                ctx.report_usage(usage);
             }
         }
         "turn/completed" => {
@@ -1391,6 +1486,7 @@ fn apply_notification(ctx: &mut TurnCtx, method: &str, params: &Value) -> Option
                 ctx.report_usage(ContextUsage {
                     used_tokens: used,
                     context_window,
+                    codex_session_usage: None,
                 });
             }
             let status = turn.get("status").and_then(Value::as_str).unwrap_or("");
@@ -2442,7 +2538,12 @@ async fn run_turn_app_server(ctx: &mut TurnCtx) -> Result<()> {
         };
     let (sandbox_mode, approval_policy, approvals_reviewer) =
         codex_policies(ctx.permission_mode, auto_review_supported);
-
+    let approval_path = match (approval_policy, approvals_reviewer) {
+        ("never", _) => Some(CodexApprovalPath::Disabled),
+        (_, "auto_review") => Some(CodexApprovalPath::AutoReview),
+        (_, "user") => Some(CodexApprovalPath::User),
+        _ => None,
+    };
     // Thread bring-up: reuse the thread this child already carries, resume a
     // persisted one on a fresh child (after an orx up restart or child crash),
     // else start a new thread. The playbook rides developerInstructions on
@@ -2462,6 +2563,7 @@ async fn run_turn_app_server(ctx: &mut TurnCtx) -> Result<()> {
     if let Some(model) = &ctx.model {
         thread_setup["model"] = Value::String(model.clone());
     }
+    let prior_thread_id = ctx.native_session_id.clone();
     let thread_id = match (ctx.native_session_id.clone(), native_session.as_ref()) {
         (Some(id), _) if client.resumed_thread().as_deref() == Some(id.as_str()) => id,
         (Some(_), None) => {
@@ -2502,6 +2604,15 @@ async fn run_turn_app_server(ctx: &mut TurnCtx) -> Result<()> {
         }
         (None, _) => start_thread(ctx, &client, thread_setup).await?,
     };
+    if prior_thread_id.as_deref() != Some(thread_id.as_str()) {
+        ctx.reset_codex_thread_usage();
+    }
+    if let Some(approval_path) = approval_path {
+        ctx.update_codex_session_usage(CodexSessionUsage {
+            approval_path: Some(approval_path),
+            ..CodexSessionUsage::default()
+        });
+    }
 
     // Route events to this turn before starting it — nothing is missed.
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -3554,6 +3665,15 @@ async fn run_turn_exec(ctx: &mut TurnCtx) -> Result<()> {
         Some(id) => codex_native_session(id).await?,
         None => None,
     };
+    if ctx.native_session_id.is_some() && native_session.is_none() {
+        ctx.reset_codex_thread_usage();
+    }
+    // The legacy `codex exec` path cannot surface approval requests. It runs
+    // with approvals disabled in both sandboxed and bypass modes.
+    ctx.update_codex_session_usage(CodexSessionUsage {
+        approval_path: Some(CodexApprovalPath::Disabled),
+        ..CodexSessionUsage::default()
+    });
     let native_store = native_session
         .as_ref()
         .map(|session| session.store)
@@ -3823,13 +3943,24 @@ async fn run_turn_exec(ctx: &mut TurnCtx) -> Result<()> {
                 }
             }
             "token_count" => {
-                let (used, context_window) =
+                let (used, context_window, session_usage) =
                     token_count_usage(msg.get("info").unwrap_or(&Value::Null));
-                if let Some(used) = used {
-                    ctx.report_usage(ContextUsage {
-                        used_tokens: used,
-                        context_window,
+                if used.is_some() || session_usage.is_some() {
+                    let mut usage = ctx.context_usage.clone().unwrap_or(ContextUsage {
+                        used_tokens: 0,
+                        context_window: None,
+                        codex_session_usage: None,
                     });
+                    if let Some(used_tokens) = used {
+                        usage.used_tokens = used_tokens;
+                    }
+                    if context_window.is_some() {
+                        usage.context_window = context_window;
+                    }
+                    if let Some(session_usage) = session_usage {
+                        usage.codex_session_usage = Some(session_usage);
+                    }
+                    ctx.report_usage(usage);
                 }
             }
             _ => {}
@@ -5911,6 +6042,7 @@ requires_openai_auth = false
         // cached_input_tokens is a subset of input_tokens, not additive.
         assert_eq!(usage.used_tokens, 21498 + 5);
         assert_eq!(usage.context_window, Some(272000));
+        assert_eq!(usage.codex_session_usage, None);
     }
 
     #[test]
@@ -5925,6 +6057,81 @@ requires_openai_auth = false
     }
 
     #[test]
+    fn thread_token_usage_keeps_latest_context_separate_from_cumulative_total() {
+        let mut ctx = TurnCtx::test_stub();
+        ctx.native_session_id = Some("thread-1".into());
+
+        apply_notification(
+            &mut ctx,
+            "thread/tokenUsage/updated",
+            &serde_json::json!({
+                "threadId":"thread-1",
+                "tokenUsage":{
+                    "total":{"totalTokens":10120,"inputTokens":9800,"cachedInputTokens":5123,"outputTokens":320},
+                    "last":{"totalTokens":1120,"inputTokens":1000,"outputTokens":120},
+                    "modelContextWindow":100000
+                }
+            }),
+        );
+        let first = ctx.context_usage.as_ref().expect("usage reported");
+        assert_eq!(first.used_tokens, 1120);
+        assert_eq!(first.context_window, Some(100000));
+        assert_eq!(
+            first
+                .codex_session_usage
+                .as_ref()
+                .and_then(|usage| usage.cumulative_tokens),
+            Some(10120)
+        );
+        let first_totals = first.codex_session_usage.as_ref().unwrap();
+        assert_eq!(first_totals.cumulative_input_tokens, Some(9800));
+        assert_eq!(first_totals.cumulative_cached_input_tokens, Some(5123));
+        assert_eq!(first_totals.cumulative_output_tokens, Some(320));
+
+        // Compaction may lower the latest context occupancy while Codex's
+        // thread total continues to grow.
+        apply_notification(
+            &mut ctx,
+            "thread/tokenUsage/updated",
+            &serde_json::json!({
+                "threadId":"thread-1",
+                "tokenUsage":{
+                    "total":{"totalTokens":12000,"inputTokens":11600,"cachedInputTokens":6000,"outputTokens":400},
+                    "last":{"totalTokens":500,"inputTokens":460,"outputTokens":40},
+                    "modelContextWindow":100000
+                }
+            }),
+        );
+        let after_compaction = ctx.context_usage.as_ref().expect("usage reported");
+        assert_eq!(after_compaction.used_tokens, 500);
+        assert_eq!(
+            after_compaction
+                .codex_session_usage
+                .as_ref()
+                .and_then(|usage| usage.cumulative_tokens),
+            Some(12000)
+        );
+        let totals = after_compaction.codex_session_usage.as_ref().unwrap();
+        assert_eq!(totals.cumulative_input_tokens, Some(11600));
+        assert_eq!(totals.cumulative_cached_input_tokens, Some(6000));
+        assert_eq!(totals.cumulative_output_tokens, Some(400));
+    }
+
+    #[test]
+    fn auto_approval_review_marks_usage_unavailable_without_inventing_totals() {
+        let mut ctx = TurnCtx::test_stub();
+        apply_notification(
+            &mut ctx,
+            "item/autoApprovalReview/started",
+            &serde_json::json!({"review":{"status":"inProgress","rationale":null}}),
+        );
+        let session_usage = ctx.context_usage.unwrap().codex_session_usage.unwrap();
+        assert_eq!(session_usage.auto_review_usage_unavailable, Some(true));
+        assert_eq!(session_usage.cumulative_tokens, None);
+        assert_eq!(session_usage.elapsed_ms, None);
+    }
+
+    #[test]
     fn legacy_token_count_prefers_last_usage_and_reads_window() {
         // The `token_count` legacy-exec info the loop's arm folds via
         // `token_count_usage`: `last_token_usage` (the latest request, whose
@@ -5936,14 +6143,38 @@ requires_openai_auth = false
             "model_context_window": 272000
         });
         // cached_input_tokens is a subset of input_tokens, not additive.
-        assert_eq!(token_count_usage(&info), (Some(21498 + 5), Some(272000)));
+        let (used, window, session_usage) = token_count_usage(&info);
+        assert_eq!(used, Some(21498 + 5));
+        assert_eq!(window, Some(272000));
+        let session_usage = session_usage.unwrap();
+        assert_eq!(session_usage.cumulative_tokens, Some(999999 + 50));
+        assert_eq!(session_usage.cumulative_input_tokens, Some(999999));
+        assert_eq!(session_usage.cumulative_cached_input_tokens, Some(9984));
+        assert_eq!(session_usage.cumulative_output_tokens, Some(50));
 
         // No last → fall back to total.
         let total_only = serde_json::json!({
             "total_token_usage": {"input_tokens":100,"output_tokens":20},
             "model_context_window": 272000
         });
-        assert_eq!(token_count_usage(&total_only), (Some(120), Some(272000)));
+        let (used, window, session_usage) = token_count_usage(&total_only);
+        assert_eq!(used, Some(120));
+        assert_eq!(window, Some(272000));
+        assert_eq!(session_usage.unwrap().cumulative_tokens, Some(120));
+    }
+
+    #[test]
+    fn auto_approval_option_explains_separate_review_model() {
+        let option = Codex
+            .options()
+            .permission_modes
+            .into_iter()
+            .find(|choice| choice.id == "approve-for-me")
+            .expect("auto-approval option");
+        assert_eq!(option.label, "Auto approval");
+        let description = option.description.expect("option help");
+        assert!(description.contains("separate model"));
+        assert!(description.contains("not reported here"));
     }
 
     #[test]

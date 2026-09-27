@@ -1859,6 +1859,7 @@ fn handle_event(
                     ctx.report_usage(ContextUsage {
                         used_tokens: used,
                         context_window: None,
+                        codex_session_usage: None,
                     });
                 }
             }
