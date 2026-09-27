@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "suite_version": "0.2.0",
+  "suite_version": "0.3.0",
   "cases": [
     {
       "id": "embodied-transformer-history",
@@ -17,27 +17,151 @@
       "id": "pi0-latency",
       "split": "development",
       "kind": "source-check",
-      "prompt": "根据《π0: A Vision-Language-Action Flow Model for General Robot Control》原论文，解释模型一次机器人端推理的耗时构成，以及这些数字对实时控制意味着什么。请给我简短、可核查的中文说明。",
+      "prompt": "根据《π0: A Vision-Language-Action Flow Model for General Robot Control》原论文，报告图像编码、observation 前向、十次 flow 前向、板载总耗时、离板网络耗时和总耗时，并说明 20 Hz 与 50 Hz 机器人的再次推理周期及其控制含义。请标出硬件与相机条件，给我简短、可核查的中文说明。",
       "primary_source": "https://arxiv.org/html/2410.24164",
       "source_locator": "Appendix D, Table I",
       "review_focus": [
         "区分十次 flow 前向、图像编码和机器人端总耗时",
         "数字和硬件条件是否与原论文一致",
         "实时性的推断是否有适当边界"
-      ]
+      ],
+      "grading": {
+        "required_facts": [
+          {
+            "id": "timing-hardware",
+            "fact": "Table I timings use an NVIDIA GeForce RTX 4090 and three camera images.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Inference; Table I"
+          },
+          {
+            "id": "image-encoder-time",
+            "fact": "Image encoders take 14 ms.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Table I"
+          },
+          {
+            "id": "observation-forward-time",
+            "fact": "The observation forward pass takes 32 ms.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Table I"
+          },
+          {
+            "id": "flow-forward-time",
+            "fact": "The ten action/flow forward passes together take 27 ms.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Table I"
+          },
+          {
+            "id": "onboard-total-time",
+            "fact": "Total on-board inference time is 73 ms.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Table I"
+          },
+          {
+            "id": "offboard-network-time",
+            "fact": "Off-board inference adds 13 ms of network latency and totals 86 ms.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Table I"
+          },
+          {
+            "id": "twenty-hz-cadence",
+            "fact": "The 20 Hz UR5e and Franka robots run inference every 0.8 seconds, after 16 actions.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Inference"
+          },
+          {
+            "id": "fifty-hz-cadence",
+            "fact": "Other robots running at 50 Hz run inference every 0.5 seconds, after 25 actions.",
+            "source_url": "https://arxiv.org/html/2410.24164v4",
+            "source_section": "Appendix A-D, Inference"
+          }
+        ],
+        "critical_errors": [
+          {
+            "id": "flow-time-as-total",
+            "false_claim": "The 27 ms for ten flow passes is the total robot-side inference time."
+          },
+          {
+            "id": "control-frequency-as-inference-frequency",
+            "false_claim": "π0 recomputes an inference at every 20 Hz or 50 Hz control step."
+          }
+        ]
+      }
     },
     {
       "id": "virtualhome-attribution",
       "split": "development",
       "kind": "source-check",
-      "prompt": "根据《Language Models as Zero-Shot Planners: Extracting Actionable Knowledge for Embodied Agents》原论文，解释 VirtualHome 上可执行性提升的结果和方法原因。请给我简短、可核查的中文说明。",
+      "prompt": "根据《Language Models as Zero-Shot Planners: Extracting Actionable Knowledge for Embodied Agents》原论文，报告 Table 1 中 Vanilla Codex 12B 与完整 Translated Codex 12B 的可执行性和正确性，再列出 Table 2 中 Translated Codex 12B 去掉动作翻译、动态示例、轨迹修正时的可执行性。说明这些结果对方法归因的含义。请给我简短、可核查的中文说明。",
       "primary_source": "https://arxiv.org/html/2201.07207",
       "source_locator": "Sections 3.2–3.4; Tables 1–2",
       "review_focus": [
         "不把完整方法的提升全归功于动作翻译一个组件",
         "区分可执行性与正确性",
         "数字和消融结论是否与原论文一致"
-      ]
+      ],
+      "grading": {
+        "required_facts": [
+          {
+            "id": "vanilla-executability",
+            "fact": "Table 1 reports 18.07% executability for Vanilla Codex 12B.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 1"
+          },
+          {
+            "id": "translated-executability",
+            "fact": "Table 1 reports 78.57% executability for complete Translated Codex 12B.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 1"
+          },
+          {
+            "id": "vanilla-correctness",
+            "fact": "Table 1 reports 64.87% correctness for Vanilla Codex 12B.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 1"
+          },
+          {
+            "id": "translated-correctness",
+            "fact": "Table 1 reports 54.88% correctness for Translated Codex 12B.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 1"
+          },
+          {
+            "id": "without-action-translation",
+            "fact": "Table 2 reports 31.49% executability for Translated Codex 12B without action translation.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 2"
+          },
+          {
+            "id": "without-dynamic-example",
+            "fact": "Table 2 reports 50.86% executability without the dynamic example.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 2"
+          },
+          {
+            "id": "without-trajectory-correction",
+            "fact": "Table 2 reports 55.19% executability without trajectory correction.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 2"
+          },
+          {
+            "id": "translation-largest-ablation",
+            "fact": "Removing action translation causes the largest executability drop among the three listed Codex 12B ablations.",
+            "source_url": "https://arxiv.org/html/2201.07207",
+            "source_section": "Table 2"
+          }
+        ],
+        "critical_errors": [
+          {
+            "id": "translation-alone-attribution",
+            "false_claim": "The full method's executability increase from 18.07% to 78.57% measures the effect of action translation alone."
+          },
+          {
+            "id": "executability-equals-correctness",
+            "false_claim": "The reported executability increase also establishes an increase in correctness or unqualified overall quality."
+          }
+        ]
+      }
     },
     {
       "id": "molmoact-action-representation",
@@ -50,7 +174,39 @@
         "是否依据 MolmoAct 原论文核实其自回归动作 token 架构",
         "是否将 Action Hallucination §1 对 MolmoAct 的条件流/扩散归类与原论文直接对照，并说明差异",
         "是否点名被讨论的架构并给出可追溯的原文位置"
-      ]
+      ],
+      "grading": {
+        "required_facts": [
+          {
+            "id": "molmoact-autoregressive-control",
+            "fact": "MolmoAct §2.3 formulates visuomotor control as autoregressive sequence modeling and generates action tokens autoregressively.",
+            "source_url": "https://arxiv.org/html/2508.07917",
+            "source_section": "Section 2.3"
+          },
+          {
+            "id": "action-hallucination-classification",
+            "fact": "Action Hallucination §1 groups MolmoAct with conditional flow/diffusion models for action trajectories.",
+            "source_url": "https://arxiv.org/html/2602.06339",
+            "source_section": "Section 1"
+          },
+          {
+            "id": "source-description-discrepancy",
+            "fact": "Action Hallucination's classification conflicts with MolmoAct's own autoregressive action-token description.",
+            "source_url": "https://arxiv.org/html/2508.07917",
+            "source_section": "Section 2.3; compare Action Hallucination Section 1"
+          }
+        ],
+        "critical_errors": [
+          {
+            "id": "molmoact-flow-architecture",
+            "false_claim": "MolmoAct's own paper describes its action generation as conditional flow matching or diffusion."
+          },
+          {
+            "id": "sources-agree-on-architecture",
+            "false_claim": "The two papers give the same architecture description for MolmoAct."
+          }
+        ]
+      }
     },
     {
       "id": "embodied-closed-loop-history",
@@ -63,7 +219,102 @@
         "是否用 RT-1 和 RT-2 原论文核实 2025 年前已有的低层视觉到动作闭环控制",
         "是否把 Embodied-R1.5 的任务层计划、监测和重规划与低层控制闭环区分开",
         "是否避免声称闭环能力直到 2025–26 年才出现，并为时间与能力范围提供原文位置"
-      ]
+      ],
+      "grading": {
+        "required_facts": [
+          {
+            "id": "rt1-closed-loop-control",
+            "fact": "RT-1 states that it performs closed-loop robot control.",
+            "source_url": "https://arxiv.org/html/2212.06817",
+            "source_section": "Section 4, System Overview"
+          },
+          {
+            "id": "rt2-closed-loop-control",
+            "fact": "RT-2 describes robot actions as tokens that are decoded into actions for closed-loop control.",
+            "source_url": "https://arxiv.org/html/2307.15818",
+            "source_section": "Figure 1; Introduction"
+          },
+          {
+            "id": "embodied-r15-task-loop",
+            "fact": "Embodied-R1.5 describes a planner-grounder-corrector loop that monitors execution and triggers retries or adaptive replanning after failure.",
+            "source_url": "https://arxiv.org/html/2606.11324",
+            "source_section": "Sections 2.1 and 5"
+          },
+          {
+            "id": "closed-loop-predates-2025",
+            "fact": "RT-1 and RT-2 already document closed-loop robot control before 2025; Embodied-R1.5's later task-level loop does not establish the first appearance of closed-loop control.",
+            "source_url": "https://arxiv.org/html/2212.06817",
+            "source_section": "RT-1 Section 4; compare RT-2 Introduction and Embodied-R1.5 Sections 2.1 and 5"
+          }
+        ],
+        "critical_errors": [
+          {
+            "id": "closed-loop-begins-2025",
+            "false_claim": "Closed-loop robot control first appeared in 2025–26."
+          },
+          {
+            "id": "task-loop-equals-control-loop",
+            "false_claim": "Embodied-R1.5's task-level planning and correction loop is the same capability as RT-1/RT-2 low-level perception-to-action control."
+          }
+        ]
+      }
+    },
+    {
+      "id": "adamw-decoupled-weight-decay",
+      "split": "development",
+      "kind": "source-check",
+      "prompt": "我想理解优化器正则化方法为何从常见的 L2 penalty 写法发展到 AdamW。请根据《Decoupled Weight Decay Regularization》原论文，写一份约 800–1200 字、可供评审的中文短报告：说明 L2 penalty 与 decoupled weight decay 对标准 SGD 和 Adam 是否等价；若 SGD 下等价，指出系数如何随学习率缩放；解释 AdamW 改变了什么，以及论文实证收益的适用范围。",
+      "primary_source": "https://arxiv.org/html/1711.05101v3",
+      "source_locator": "Abstract; Sections 2 and 4; Section 5",
+      "review_focus": [
+        "是否准确区分标准 SGD 与 Adam 下 L2 正则和 decoupled weight decay 的关系",
+        "是否说明 AdamW 将 weight decay 从自适应梯度更新中解耦",
+        "是否把论文的图像分类实验和作者说明的适用边界讲清楚"
+      ],
+      "grading": {
+        "required_facts": [
+          {
+            "id": "sgd-equivalence-rescaling",
+            "fact": "For standard SGD, L2 regularization and weight decay are equivalent when the coefficient is rescaled by the learning rate (lambda-prime = lambda / alpha in the paper's notation).",
+            "source_url": "https://arxiv.org/html/1711.05101v3",
+            "source_section": "Abstract; Section 2, Proposition 1"
+          },
+          {
+            "id": "adam-inequivalence",
+            "fact": "For Adam and adaptive gradients, L2 regularization and decoupled weight decay are not equivalent.",
+            "source_url": "https://arxiv.org/html/1711.05101v3",
+            "source_section": "Abstract; Section 2, Proposition 2"
+          },
+          {
+            "id": "adamw-separate-decay",
+            "fact": "AdamW applies weight decay separately from the adaptive gradient update instead of adapting the L2 penalty as part of the loss gradient.",
+            "source_url": "https://arxiv.org/html/1711.05101v3",
+            "source_section": "Section 2, Algorithm 2 and discussion"
+          },
+          {
+            "id": "image-classification-evidence-scope",
+            "fact": "The paper's main AdamW generalization comparison is on image-classification datasets.",
+            "source_url": "https://arxiv.org/html/1711.05101v3",
+            "source_section": "Abstract; Sections 4.3 and 4.5"
+          },
+          {
+            "id": "authors-state-scope-limit",
+            "fact": "The conclusion says the image-classification results need verification on a wider range of tasks.",
+            "source_url": "https://arxiv.org/html/1711.05101v3",
+            "source_section": "Section 5"
+          }
+        ],
+        "critical_errors": [
+          {
+            "id": "adam-equivalence",
+            "false_claim": "L2 regularization and decoupled weight decay are equivalent for Adam or other adaptive gradient methods."
+          },
+          {
+            "id": "universal-adamw-dominance",
+            "false_claim": "The paper establishes AdamW as universally superior across tasks or optimizers."
+          }
+        ]
+      }
     },
     {
       "id": "driving-end-to-end-history",
@@ -75,6 +326,73 @@
         "代表性原始工作与效果边界是否可核查",
         "是否说明模块化和端到端路线仍然并存的原因"
       ]
+    },
+    {
+      "id": "sqlite-wal-concurrency",
+      "split": "confirmation",
+      "kind": "source-check",
+      "prompt": "我想理解 SQLite 的 WAL 如何改变读写并发，以及它付出的代价。请根据 SQLite 官方 Write-Ahead Logging 文档，写一份约 800–1200 字、可供评审的中文短报告：说明 WAL 模式下读写是否能并行、同时写入的限制、长读事务对 checkpoint 和 WAL 重置的影响，以及 WAL 对共享内存和网络文件系统的要求；说明文档记录的 SQLITE_BUSY 例外，避免将并发性质说成绝对保证。",
+      "primary_source": "https://www.sqlite.org/wal.html",
+      "source_locator": "Sections 1–2, 6, and 9",
+      "review_focus": [
+        "是否说明 WAL 通常允许读者与写者并行，但同一时刻只有一个写者",
+        "是否说明长读事务可能阻止 checkpoint 完成并延后 WAL 重置",
+        "是否说明 WAL 需要同机共享内存、不能用于网络文件系统，并保留 SQLITE_BUSY 例外"
+      ],
+      "grading": {
+        "required_facts": [
+          {
+            "id": "reader-writer-concurrency",
+            "fact": "WAL generally allows readers and a writer to proceed concurrently.",
+            "source_url": "https://www.sqlite.org/wal.html",
+            "source_section": "Sections 1 and 2.2"
+          },
+          {
+            "id": "single-writer",
+            "fact": "WAL mode permits only one writer at a time.",
+            "source_url": "https://www.sqlite.org/wal.html",
+            "source_section": "Section 2.2"
+          },
+          {
+            "id": "long-reader-stalls-checkpoint",
+            "fact": "A long-running read transaction can prevent a checkpointer from making progress or completing its work.",
+            "source_url": "https://www.sqlite.org/wal.html",
+            "source_section": "Sections 2.2 and 6"
+          },
+          {
+            "id": "reader-delays-wal-reset",
+            "fact": "A WAL reset requires the checkpoint to transfer and sync the full WAL and no readers to still be using it, so a long-running reader can delay reset.",
+            "source_url": "https://www.sqlite.org/wal.html",
+            "source_section": "Section 2.2"
+          },
+          {
+            "id": "same-host-network-filesystem",
+            "fact": "WAL relies on shared memory among processes on the same host and does not work over a network filesystem.",
+            "source_url": "https://www.sqlite.org/wal.html",
+            "source_section": "Sections 1 and 2.2"
+          },
+          {
+            "id": "sqlite-busy-exceptions",
+            "fact": "SQLite documents situations in which queries in WAL mode can return SQLITE_BUSY.",
+            "source_url": "https://www.sqlite.org/wal.html",
+            "source_section": "Section 9"
+          }
+        ],
+        "critical_errors": [
+          {
+            "id": "multiple-wal-writers",
+            "false_claim": "WAL mode allows multiple writers to write at the same time."
+          },
+          {
+            "id": "wal-network-filesystem",
+            "false_claim": "WAL mode works across a network filesystem."
+          },
+          {
+            "id": "wal-never-busy",
+            "false_claim": "WAL mode guarantees that operations never return SQLITE_BUSY."
+          }
+        ]
+      }
     }
   ]
 }

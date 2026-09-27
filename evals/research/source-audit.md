@@ -1,6 +1,6 @@
-# Source audit after blind preference
+# Source audit after blind first impression
 
-First record the user's initial A/B/tie/cannot-judge impression and reason in `review.md`. Then use this sheet to check the strongest factual claims in each report while labels remain blind. The reviewer should inspect 3–5 consequential claims per full report, including surprising numbers or causal attributions, and record the exact sentence, original-source location, and judgment. A missing citation is a traceability problem; an unsupported or contradicted claim is a factual problem. Do not infer quality from citation count alone. Ask the user for a final choice after this audit and before revealing the A/B key.
+For field reports, first record the user's initial A/B/tie/cannot-judge impression and reason in `review.md`. Then use this sheet to check factual claims while labels remain blind. For source-check cases, check every frozen reviewer-only `grading.required_facts` item and `grading.critical_errors` entry in `cases.json`, then audit other consequential claims against primary sources. For field reports, inspect 3–5 consequential claims, including surprising numbers or causal attributions. Record the exact sentence, original-source location, and judgment. A missing citation is a traceability problem; an absent required fact is missing; a contradicted or misstated claim is wrong. Do not infer quality from citation count alone. The frozen factual pass/fail is the primary source-check outcome; user preference is optional and separate. For field reports, the user's final blind preference is primary. Record outcomes after the audit and before revealing the A/B key.
 
 ## `embodied-transformer-history`
 
@@ -37,6 +37,22 @@ Sources: [RT-1](https://arxiv.org/html/2212.06817); [RT-2](https://arxiv.org/htm
 - Check RT-1 and RT-2 for pre-2025 low-level robot control that repeatedly uses observations to produce actions. The report should not date the beginning of closed-loop robot control to 2025–26.
 - Check Embodied-R1.5 for task-level planning, monitoring, and replanning. Distinguish this reasoning loop from the earlier perception-to-action control loop and state which level any novelty claim concerns.
 - Require source locations for each paper used to establish the chronology and the distinction between control levels.
+
+## `adamw-decoupled-weight-decay`
+
+Original source: [Loshchilov & Hutter, Decoupled Weight Decay Regularization](https://arxiv.org/html/1711.05101v3).
+
+- Section 2, Proposition 1, shows standard SGD equivalence only with coefficient rescaling by the learning rate (`lambda-prime = lambda / alpha`). Proposition 2 establishes that this equivalence fails for adaptive gradients such as Adam.
+- AdamW applies weight decay separately from the adaptive gradient update. With L2 regularization in Adam, the regularizer's gradient is scaled as part of the adaptive update.
+- The paper's main generalization comparisons are on image-classification datasets, including CIFAR-10 and ImageNet32x32. Section 5 says the results need verification on a wider range of tasks; do not turn these experiments into a universal optimizer ranking.
+
+## `sqlite-wal-concurrency`
+
+Original source: [SQLite Write-Ahead Logging](https://www.sqlite.org/wal.html).
+
+- Sections 1 and 2.2 say readers and a writer can usually proceed concurrently, but only one writer can write at a time. Section 9 documents cases where queries return `SQLITE_BUSY`.
+- Sections 2.2 and 6 explain that a long-running reader can stop checkpoint progress. The WAL can be reset only after all content is checkpointed and synced and no reader still uses the WAL, so a long reader can delay reset.
+- Sections 1 and 2.2 explain that WAL uses shared memory among processes on the same host and does not work over a network filesystem.
 
 ## `driving-end-to-end-history`
 
