@@ -33,6 +33,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Research evaluation casebook
+        run: python3 evals/research/eval.py validate
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
